@@ -10,7 +10,6 @@ Started 2015-11-18 by David Megginson
 
 import ckanapi
 import hxl
-import urllib
 
 # read configuration values from config.py
 import config
@@ -35,7 +34,7 @@ ckan = ckanapi.RemoteCKAN(config.CONFIG['ckanurl'], apikey=config.CONFIG['apikey
 for row in hxl.data(INPUTS_URL, True):
 
     # Skip if there's no M49 code for HDX
-    hdx_code = row.get('country+code+m49')
+    hdx_code = row.get('country+code+m49').lower()
     if not hdx_code:
         continue
 
@@ -43,9 +42,8 @@ for row in hxl.data(INPUTS_URL, True):
     ourairports_code = row.get('country+code+iso2')
     stub = 'ourairports-{code}'.format(code=hdx_code.lower())
 
-
     # Create the basic dataset object, with an empty list of resources
-    dataset = {
+    dataset_new_properties = {
         'name': stub,
         'title': 'Airports in {country}'.format(country=country),
         'notes': 'List of airports in {country}, with latitude and longitude. '
@@ -60,22 +58,26 @@ for row in hxl.data(INPUTS_URL, True):
         'package_creator': 'script',
         'license_id': 'Public Domain',
         'methodology': 'Other',
+        'methodology_other': 'Crowdsourced open data.',
+        'data_update_frequency': '0',
+        'dataset_date': '01/01/2008-01/01/2028',
         'caveats': 'Unverified live data. May change at any time.',
-        'groups': [{'id': hdx_code.lower()}],
+        'groups': [{'id': hdx_code}],
         'tags': [
             {'name': 'aviation'}, 
             {'name': 'geodata'},
             {'name': 'airports'},
             {'name': 'transportation'},
             {'name': 'facilities'},
-            {'name': 'hxl'}
+            {'name': 'hxl'},
+            {'name': 'crowdsourced'},
         ],
         'resources': []
     }
 
     # Add resources to the dataset
     for format in ['hxl', 'csv']:
-        dataset['resources'].append({
+        dataset_new_properties['resources'].append({
             'name': 'List of airports in {country} ({notes})'.format(
                 country=country,
                 notes='HXL tags' if format == 'hxl' else 'no HXL tags'
@@ -90,13 +92,20 @@ for row in hxl.data(INPUTS_URL, True):
             'format': 'csv'
         })
 
-    # Try creating the dataset on CKAN, and if that fails, update instead
+    # Update or create, as appropriate
     try:
-        ckan.call_action('package_create', dataset)
-        print("Created {stub}...".format(stub=stub))
+        try:
+            dataset = ckan.action.package_show(id=stub)
+            for prop in dataset_new_properties:
+                dataset[prop] = dataset_new_properties[prop]
+            ckan.call_action('package_update', dataset)
+            print("Updated {stub}...".format(stub=stub))
+        except:
+            dataset = dataset_new_properties
+            ckan.call_action('package_create', dataset)
+            print("Created {stub}...".format(stub=stub))
     except:
-        ckan.call_action('package_update', dataset)
-        print("Updated {stub}...".format(stub=stub))
+        print("*** Failed to create record for {}".format(stub))
 
 exit(0)
 
