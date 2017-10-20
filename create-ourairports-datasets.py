@@ -10,6 +10,7 @@ Started 2015-11-18 by David Megginson
 
 import ckanapi
 import hxl
+import sys
 
 # read configuration values from config.py
 import config
@@ -34,13 +35,22 @@ ckan = ckanapi.RemoteCKAN(config.CONFIG['ckanurl'], apikey=config.CONFIG['apikey
 for row in hxl.data(INPUTS_URL, True):
 
     # Skip if there's no M49 code for HDX
-    hdx_code = row.get('country+code+m49').lower()
-    if not hdx_code:
+    hdx_code = row.get('country+code+m49')
+    if hdx_code:
+        hdx_code = hdx_code.lower()
+    else:
         continue
 
     country = row.get('country+name+en')
     ourairports_code = row.get('country+code+iso2')
-    stub = 'ourairports-{code}'.format(code=hdx_code.lower())
+    stub = 'ourairports-{code}'.format(code=hdx_code)
+
+    # Make sure the country exists on HDX
+    try:
+        country_data = ckan.action.group_show(id=hdx_code)
+    except:
+        print("** Country not found on HDX: {} {}".format(hdx_code, country))
+        continue
 
     # Create the basic dataset object, with an empty list of resources
     dataset_new_properties = {
@@ -60,9 +70,9 @@ for row in hxl.data(INPUTS_URL, True):
         'methodology': 'Other',
         'methodology_other': 'Crowdsourced open data.',
         'data_update_frequency': '0',
-        'dataset_date': '01/01/2008-01/01/2028',
+        'dataset_date': '01/01/2008-12/31/2027',
         'caveats': 'Unverified live data. May change at any time.',
-        'groups': [{'id': hdx_code}],
+        'groups': [{'name': hdx_code}],
         'tags': [
             {'name': 'aviation'}, 
             {'name': 'geodata'},
@@ -94,18 +104,22 @@ for row in hxl.data(INPUTS_URL, True):
 
     # Update or create, as appropriate
     try:
-        try:
-            dataset = ckan.action.package_show(id=stub)
+        dataset = ckan.action.package_show(id=stub)
+    except:
+        dataset = False
+
+    try:
+        if dataset:
             for prop in dataset_new_properties:
                 dataset[prop] = dataset_new_properties[prop]
             ckan.call_action('package_update', dataset)
             print("Updated {stub}...".format(stub=stub))
-        except:
+        else:
             dataset = dataset_new_properties
             ckan.call_action('package_create', dataset)
             print("Created {stub}...".format(stub=stub))
-    except:
-        print("*** Failed to create record for {}".format(stub))
+    except Exception as e:
+        print("*** Failed to create record for {}: {}".format(stub, str(e)))
 
 exit(0)
 
